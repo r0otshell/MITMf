@@ -35,20 +35,12 @@ class URLMonitor:
     # Start the arms race, and end up here...
     javascriptTrickery = [re.compile("http://.+\.etrade\.com/javascript/omntr/tc_targeting\.html")]
     _instance          = None
-    sustitucion        = dict()
-    real               = dict()
-    patchDict          = {
-                          'https:\/\/fbstatic-a.akamaihd.net':'http:\/\/webfbstatic-a.akamaihd.net',
-                          'https:\/\/www.facebook.com':'http:\/\/social.facebook.com',
-                          'return"https:"':'return"http:"'
-                         }
 
     def __init__(self):
         self.strippedURLs       = set()
         self.strippedURLPorts   = {}
         self.redirects          = []
         self.faviconReplacement = False
-        self.hsts               = False
         self.app                = False
         self.caching            = False
 
@@ -58,10 +50,6 @@ class URLMonitor:
             URLMonitor._instance = URLMonitor()
 
         return URLMonitor._instance
-    
-    #This is here because I'm lazy
-    def getResolverPort(self):
-        return int(ConfigWatcher().config['MITMf']['DNS']['port'])
 
     def isSecureLink(self, client, url):
         for expression in URLMonitor.javascriptTrickery:
@@ -84,6 +72,7 @@ class URLMonitor:
             if from_url in s:
                 s.add(to_url)
                 return
+
         url_set = set([from_url, to_url])
         log.debug("Set redirection: {}".format(url_set))
         self.redirects.append(url_set)
@@ -115,42 +104,13 @@ class URLMonitor:
             if len(port) == 0:
                 port = 443
 
-        if self.hsts:
-            self.updateHstsConfig()
+        url = method + host + path
 
-            if not self.sustitucion.has_key(host):
-                lhost = host[:4]
-                if lhost=="www.":
-                    self.sustitucion[host] = "w"+host
-                    self.real["w"+host] = host
-                else:
-                    self.sustitucion[host] = "web"+host
-                    self.real["web"+host] = host
-                log.debug("SSL host ({}) tokenized ({})".format(host, self.sustitucion[host]))
-                    
-            url = 'http://' + host + path
-
-            self.strippedURLs.add((client, url))
-            self.strippedURLPorts[(client, url)] = int(port)
-            
-            return 'http://'+ self.sustitucion[host] + path
-
-        else:
-            url = method + host + path
-
-            self.strippedURLs.add((client, url))
-            self.strippedURLPorts[(client, url)] = int(port)
+        self.strippedURLs.add((client, url))
+        self.strippedURLPorts[(client, url)] = int(port)
 
     def setFaviconSpoofing(self, faviconSpoofing):
         self.faviconSpoofing = faviconSpoofing
-
-    def updateHstsConfig(self):
-        for k,v in ConfigWatcher().config['SSLstrip+'].iteritems():
-            self.sustitucion[k] = v
-            self.real[v] = k
-
-    def setHstsBypass(self):
-        self.hsts = True
 
     def setAppCachePoisoning(self):
         self.app = True
@@ -160,16 +120,3 @@ class URLMonitor:
 
     def isSecureFavicon(self, client, url):
         return ((self.faviconSpoofing == True) and (url.find("favicon-x-favicon-x.ico") != -1))
-    
-    def URLgetRealHost(self, host):
-        log.debug("Parsing host: {}".format(host))
-
-        self.updateHstsConfig()
-
-        if self.real.has_key(host):
-            log.debug("Found host in list: {}".format(self.real[host]))
-            return self.real[host]
-
-        else:
-            log.debug("Host not in list: {}".format(host))
-            return host

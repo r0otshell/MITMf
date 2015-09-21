@@ -49,14 +49,3 @@ class DnsCache:
 			return self.cache[host]
 
 		return None
-
-	def setCustomRes(self, host, ip_address=None):
-		if ip_address is not None:
-			self.cache[host] = ip_address
-			log.debug("DNS entry set: %s -> %s" %(host, ip_address))
-		else:
-			if self.customAddress is not None:
-				self.cache[host] = self.customAddress
-
-	def setCustomAddress(self, ip_address):
-		self.customAddress = ip_address

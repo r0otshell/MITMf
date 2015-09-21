@@ -44,7 +44,6 @@ class SSLServerConnection(ServerConnection):
     def __init__(self, command, uri, postData, headers, client):
         ServerConnection.__init__(self, command, uri, postData, headers, client)
         self.urlMonitor = URLMonitor.getInstance()
-        self.hsts       = URLMonitor.getInstance().hsts
 
     def getLogLevel(self):
         return logging.INFO
@@ -53,30 +52,9 @@ class SSLServerConnection(ServerConnection):
         return "SECURE POST"
 
     def handleHeader(self, key, value):
-        if self.hsts:
-            if (key.lower() == 'set-cookie'):
-                newvalues =[]
-                value = SSLServerConnection.cookieExpression.sub("\g<1>", value)
-                values = value.split(';')
-                for v in values:
-                    if v[:7].lower()==' domain':
-                        dominio=v.split("=")[1]
-                        log.debug("Parsing cookie domain parameter: %s"%v)
-                        real = self.urlMonitor.real
-                        if dominio in real:
-                            v=" Domain=%s"%real[dominio]
-                            log.debug("New cookie domain parameter: %s"%v)
-                    newvalues.append(v)
-                value = ';'.join(newvalues)
+        if (key.lower() == 'set-cookie'):
+            value = SSLServerConnection.cookieExpression.sub("\g<1>", value)
 
-            if (key.lower() == 'access-control-allow-origin'):
-                value='*'
-
-        else:
-            if (key.lower() == 'set-cookie'):
-                value = SSLServerConnection.cookieExpression.sub("\g<1>", value)
-
-        
         ServerConnection.handleHeader(self, key, value)
 
     def stripFileFromPath(self, path):

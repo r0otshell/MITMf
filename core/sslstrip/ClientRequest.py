@@ -56,31 +56,16 @@ class ClientRequest(Request):
         Request.__init__(self, channel, queued)
         self.reactor       = reactor
         self.urlMonitor    = URLMonitor.getInstance()
-        self.hsts          = URLMonitor.getInstance().hsts
         self.cookieCleaner = CookieCleaner.getInstance()
         self.dnsCache      = DnsCache.getInstance()
-        #self.uniqueId      = random.randint(0, 10000)
         
         #Use are own DNS server instead of reactor.resolve()
-        self.customResolver = dns.resolver.Resolver()    
-        self.customResolver.nameservers  = ['127.0.0.1']
+        self.resolver = dns.resolver.Resolver()    
+        self.resolver.nameservers  = ['127.0.0.1']
+        self.resolver.port = 53
 
     def cleanHeaders(self):
         headers = self.getAllHeaders().copy()
-
-        if self.hsts:
-
-            if 'referer' in headers:
-                real = self.urlMonitor.real
-                if len(real) > 0:
-                    dregex = re.compile("({})".format("|".join(map(re.escape, real.keys()))))
-                    headers['referer'] = dregex.sub(lambda x: str(real[x.string[x.start() :x.end()]]), headers['referer'])
-
-            if 'host' in headers:
-                host = self.urlMonitor.URLgetRealHost(str(headers['host']))
-                log.debug("Modifing HOST header: {} -> {}".format(headers['host'], host))
-                headers['host'] = host
-                self.setHeader('Host', host)
 
         if 'accept-encoding' in headers:
              del headers['accept-encoding']
@@ -108,11 +93,6 @@ class ClientRequest(Request):
     def getPathToLockIcon(self):
         if os.path.exists("lock.ico"): return "lock.ico"
 
-        scriptPath = os.path.abspath(os.path.dirname(sys.argv[0]))
-        scriptPath = os.path.join(scriptPath, "../share/sslstrip/lock.ico")
-
-        if os.path.exists(scriptPath): return scriptPath
-
         log.warning("Error: Could not find lock.ico")
         return "lock.ico"        
 
@@ -127,37 +107,16 @@ class ClientRequest(Request):
 
         if self.content:
             self.content.seek(0,0)
-        
+
         postData          = self.content.read()
 
-        if self.hsts:
-
-            host    = self.urlMonitor.URLgetRealHost(str(host))
-            real    = self.urlMonitor.real
-            patchDict = self.urlMonitor.patchDict
-            url       = 'http://' + host + path
-            self.uri  = url # set URI to absolute
-
-            if real:
-                dregex = re.compile("({})".format("|".join(map(re.escape, real.keys()))))
-                path = dregex.sub(lambda x: str(real[x.string[x.start() :x.end()]]), path)
-                postData = dregex.sub(lambda x: str(real[x.string[x.start() :x.end()]]), postData)
-                
-                if patchDict:
-                    dregex = re.compile("({})".format("|".join(map(re.escape, patchDict.keys()))))
-                    postData = dregex.sub(lambda x: str(patchDict[x.string[x.start() :x.end()]]), postData)
-
-            
-            headers['content-length'] = str(len(postData))
-
-        #self.dnsCache.cacheResolution(host, address)
         hostparts = host.split(':')
         self.dnsCache.cacheResolution(hostparts[0], address)
 
-        if (not self.cookieCleaner.isClean(self.method, client, host, headers)):
+        if not self.cookieCleaner.isClean(self.method, client, host, headers):
             log.debug("Sending expired cookies")
             self.sendExpiredCookies(host, path, self.cookieCleaner.getExpireHeaders(self.method, client, host, headers, path))
-        
+
         elif (self.urlMonitor.isSecureFavicon(client, path)):
             log.debug("Sending spoofed favicon response")
             self.sendSpoofedFaviconResponse()
@@ -165,10 +124,9 @@ class ClientRequest(Request):
         elif self.urlMonitor.isSecureLink(client, url):
             log.debug("Sending request via SSL/TLS: {}".format(url))
             self.proxyViaSSL(address, self.method, path, postData, headers, self.urlMonitor.getSecurePort(client, url))
-        
+
         else:
             log.debug("Sending request via HTTP")
-            #self.proxyViaHTTP(address, self.method, path, postData, headers)
             port = 80
             if len(hostparts) > 1:
                 port = int(hostparts[1])
@@ -189,25 +147,19 @@ class ClientRequest(Request):
             log.debug("Host cached: {} {}".format(host, address))
             return defer.succeed(address)
         else:
-            
             log.debug("Host not cached.")
-            self.customResolver.port = self.urlMonitor.getResolverPort()
-
             try:
                 log.debug("Resolving with DNSChef")
-                address = str(self.customResolver.query(host)[0].address)
+                address = str(self.resolver.query(host)[0].address)
                 return defer.succeed(address)
             except Exception:
                 log.debug("Exception occured, falling back to Twisted")
                 return reactor.resolve(host)
 
     def process(self):
-        if self.getHeader('host') is not None:
+        if self.getHeader('host'):
             log.debug("Resolving host: {}".format(self.getHeader('host')))
             host = self.getHeader('host').split(":")[0]
-
-            if self.hsts:
-                host = self.urlMonitor.URLgetRealHost(str(host))                
 
             deferred = self.resolveHost(host)
             deferred.addCallback(self.handleHostResolvedSuccess)
@@ -234,7 +186,7 @@ class ClientRequest(Request):
             self.setHeader("Set-Cookie", header)
 
         self.finish()        
-        
+
     def sendSpoofedFaviconResponse(self):
         icoFile = open(self.getPathToLockIcon())
 

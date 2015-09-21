@@ -445,8 +445,6 @@ class DNSChef(ConfigWatcher):
 
     def on_config_change(self):
         config = self.config['MITMf']['DNS']
-        
-        self.port = int(config['port'])
 
         # Main storage of domain filters
         # NOTE: RDMAP is a dictionary map of qtype strings to handling classe
