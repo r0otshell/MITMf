@@ -16,17 +16,21 @@
 # USA
 #
 
+
 import os
 import logging
 import re
 import sys
 
+from distutils.spawn import find_executable
 from core.logger import logger
 from core.proxyplugins import ProxyPlugins
 from scapy.all import get_if_addr, get_if_hwaddr, get_working_if
 
 formatter = logging.Formatter("%(asctime)s [Utils] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 log = logger().setup_logger("Utils", formatter)
+
+NETWORK_MANAGER_ALIASES = ['network-manager', 'NetworkManager']
 
 def shutdown(message=None):
     for plugin in ProxyPlugins().plugin_list:
@@ -60,6 +64,42 @@ def get_mac(interface):
         return mac_address
     except Exception as e:
         shutdown("Error retrieving MAC address from {}: {}".format(interface, e))
+
+# Depending on what distro we are using, the Network Manager service
+# may go by either 'network-manager' or 'NetworkManager'. We need to
+# determine which of these aliases to use before making any calls to
+# the service. Since we're doing this in the constructor, we should
+# make a call to get_instance() before using this class.
+class NetworkManager(object):
+
+    _instance = None
+
+    def __init__(self):
+
+        for alias in NETWORK_MANAGER_ALIASES:
+    
+            if find_executable(alias) != None:
+                self._alias = alias
+                return
+        raise Exception('Network Manager not found.')
+
+    @staticmethod
+    def get_instance():
+        if NetworkManager._instance is None:
+            NetworkManager._instance = NetworkManager()
+        return NetworkManager._instance
+
+    def start(self):
+        os.system('service %s start' % self._alias)
+
+    def stop(self):
+        os.system('service %s stop' % self._alias)
+
+    def restart(self):
+        os.system('service %s restart' % self._alias)
+
+    def status(self):
+        os.system('service %s status' % self._alias)
 
 class iptables:
 
@@ -95,6 +135,21 @@ class iptables:
         log.debug("Setting iptables SMB redirection rule from port 445 to {}".format(smb_redir_port))
         os.system('iptables -t nat -A PREROUTING -p tcp --destination-port 445 -j REDIRECT --to-port {}'.format(smb_redir_port))
         self.smb = True
+
+    def ROGUE_AP_NAT(self, upstream=None, phy=None):
+
+        assert upstream is not None
+        assert phy is not None
+
+        log.debug("Setting iptables to bridge %s and %s" % (upstream, phy))
+
+        os.system('iptables --policy INPUT ACCEPT')
+        os.system('iptables --policy FORWARD ACCEPT')
+        os.system('iptables --policy OUTPUT ACCEPT')
+
+        self.flush()
+
+        os.system('iptables -t nat -A POSTROUTING -o %s -j MASQUERADE')
 
     def NFQUEUE(self):
         log.debug("Setting iptables NFQUEUE rule")
