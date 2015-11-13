@@ -1,10 +1,46 @@
 import os
 import logging
 import shutil
+import time
 
 CONF_HOSTAPD_KARMA = 'hostapd-karma.conf'
 
-class HostAPDKarma(object):
+class DHCPDMana(object):
+
+    _instance = None
+
+    def __init__(self):
+    
+        mana_dir = os.path.dirname(os.path.realpath(__file__))
+        self.mana_dir = mana_dir
+        self.conf_dir = '%s/conf' % mana_dir
+    
+    @staticmethod
+    def get_instance():
+        
+        if DHCPDMana._instance is None:
+            DHCPDMana._instance = DHCPDMana()
+        return DHCPDMana._instance
+
+    def select_conf(self, conf):
+        self.conf = '%s/%s' % (self.conf_dir, conf)
+
+    def start(self, phy):
+
+        # kill existing hostapd instances
+        os.system('killall hostapd')
+
+        # spawn hostapd background process
+        os.system('dhcpd -cf %s %s &' % (self.conf, phy))
+        time.sleep(2)
+
+    def stop(self):
+
+        os.system('killall dhcpd')
+        time.sleep(2)
+
+
+class HostAPDMana(object):
 
     _instance = None
     
@@ -14,14 +50,14 @@ class HostAPDKarma(object):
         self.mana_dir = mana_dir
         self.conf_dir = '%s/conf' % mana_dir
         self.cert_dir = '%s/cert' % mana_dir
-        self.hostapd_path = '%s/hostapd' % mana_dir
+        self.hostapd_path = '%s/hostapd-mana/hostapd/hostapd' % mana_dir
 
     @staticmethod
     def get_instance():
         
-        if HostAPD._instance is None:
-            HostAPD._instance = HostAPD()
-        return HostAPD._instance
+        if HostAPDMana._instance is None:
+            HostAPDMana._instance = HostAPDMana()
+        return HostAPDMana._instance
 
     def start(self):
 
@@ -34,7 +70,7 @@ class HostAPDKarma(object):
 
     def stop(self):
 
-        bash_command('killall hostapd')
+        os.system('killall hostapd')
         time.sleep(2)
 
     def configure_karma(self,
