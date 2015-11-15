@@ -1,3 +1,12 @@
 [submodule "libs/bdfactory"]
 	path = libs/bdfactory
 	url = https://github.com/secretsquirrel/the-backdoor-factory
+[submodule "core/hostapd_mana/hostapd-mana/hostapd-mana"]
+	path = core/hostapd_mana/hostapd-mana/hostapd-mana
+	url = https://github.com/sensepost/hostapd-mana.git
+[submodule "core/hostapd-mana"]
+	path = core/hostapd-mana
+	url = https://github.com/sensepost/hostapd-mana.git
+[submodule "core/hostapd_mana/hostapd-mana"]
+	path = core/hostapd_mana/hostapd-mana
+	url = https://github.com/sensepost/hostapd-mana.git

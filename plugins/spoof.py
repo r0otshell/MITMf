@@ -78,7 +78,7 @@ class Spoof(Plugin):
 
         set_ip_forwarding(1)
 
-        if iptables().http is False and options.filter is None:
+        if not iptables().http and options.filter is None:
             iptables().HTTP(options.listen_port)
 
         for protocol in self.protocol_instances:

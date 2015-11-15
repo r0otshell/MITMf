@@ -141,15 +141,15 @@ class iptables:
         assert upstream is not None
         assert phy is not None
 
-        log.debug("Setting iptables to bridge %s and %s" % (upstream, phy))
+        log.debug("Setting iptables to bridge %s and %s" % (phy, upstream))
 
         os.system('iptables --policy INPUT ACCEPT')
         os.system('iptables --policy FORWARD ACCEPT')
         os.system('iptables --policy OUTPUT ACCEPT')
-
-        self.flush()
-
-        os.system('iptables -t nat -A POSTROUTING -o %s -j MASQUERADE')
+        os.system('iptables -F')
+        os.system('iptables -t nat -F')
+        os.system('iptables -t nat -A POSTROUTING -o %s -j MASQUERADE' % upstream)
+        os.system('iptables -A FORWARD -i %s -o %s -j ACCEPT' % (phy,upstream))
 
     def NFQUEUE(self):
         log.debug("Setting iptables NFQUEUE rule")

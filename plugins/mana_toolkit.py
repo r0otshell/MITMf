@@ -17,8 +17,9 @@
 #
 
 from plugins.plugin import Plugin
-from core.utils import iptables, NetworkManager
-from core.hostapd_mana import HostAPDMana
+
+import os
+import time
 
 class ManaToolkit(Plugin):
 
@@ -30,6 +31,7 @@ class ManaToolkit(Plugin):
 
     def initialize(self, options):
 
+
         self.options = options
 
         self.phy = options.phy
@@ -37,12 +39,8 @@ class ManaToolkit(Plugin):
         self.essid = options.essid
         self.bssid = options.bssid
         self.channel = options.channel
-
-        self.iptables = iptables.get_instance()
-        self.network_manager = NetworkManager.get_instance()
-        self.hostapd = HostAPDMana.get_instance()
-        self.dhcpd = DHCPDMana.get_instance()
         
+
         if options.nat_simple:
             self._initialize_nat_simple()
 
@@ -62,33 +60,53 @@ class ManaToolkit(Plugin):
             self._initialize_noupstream()
 
     def _initialize_nat_simple(self):
+
+        from core.utils import iptables, NetworkManager, set_ip_forwarding
+        from core.hostapd_mana import HostAPDMana, DHCPDMana
+
+        hostapd = HostAPDMana.get_instance()
+        network_manager = NetworkManager.get_instance()
+        dhcpd = DHCPDMana.get_instance()
+
+        os.system('killall dnsmasq')
     
-        self.network_manager.stop()
+        network_manager.stop()
         os.system('rfkill unblock wlan')
 
         os.system('ifconfig %s up' % self.phy)
 
-        self.hostapd.configure(phy=self.phy,
+        hostapd.configure_karma(phy=self.phy,
                             essid=self.essid,
                             bssid=self.bssid,
                             channel=self.channel)
-        self.hostapd.start()
+        #hostapd.start()
         time.sleep(5)
-        os.system('ifconfig %s 10.0.0.1 netmask 255.255.255.0')
-        os.system('route add -net 10.0.0.1 netmask 255.255.255.0 gw 10.0.0.1')
+        os.system('ifconfig %s 10.0.0.1 netmask 255.255.255.0' % self.phy)
+        os.system('route add -net 10.0.0.0 netmask 255.255.255.0 gw 10.0.0.1')
 
-        self.dhcpd.select_conf('dhcpd.conf')
-        self.dhcpd.start()
+        dhcpd.select_conf('dhcpd.conf')
+        #dhcpd.start(self.phy)
         
         set_ip_forwarding(1)
+        
+        print 'setting up iptables'
+        iptables().ROGUE_AP_NAT(upstream=self.upstream, phy=self.phy)
 
-        self.iptables.ROGUE_AP_NAT(upstream=self.upstream, phy=self.phy)
+        if not iptables().http and self.options.filter is None:
+            iptables().HTTP(self.options.listen_port)
 
     def on_shutdown(self):
 
-        self.iptables.flush()
-        self.hostapd.stop()
-        self.dhcpd.stop()
+        from core.utils import iptables
+        from core.hostapd_mana import HostAPDMana, DHCPDMana
+
+        hostapd = HostAPDMana.get_instance()
+        _iptables = iptables()
+        dhcpd = DHCPDMana.get_instance()
+
+        _iptables.flush()
+        hostapd.stop()
+        dhcpd.stop()
 
     def options(self, options):
 

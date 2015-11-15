@@ -175,6 +175,21 @@ else:
     SMB().start()
     print "|_ SMB server online\n"
 
+
+    if options.mana:
+
+        #Start DHCPD
+        from core.hostapd_mana import DHCPDMana
+        dhcpd = DHCPDMana.get_instance()
+        dhcpd.start(options.phy)
+        print "|_ DHCPD online"
+
+        #Start HostAPD
+        from core.hostapd_mana import HostAPDMana
+        hostapd = HostAPDMana.get_instance()
+        hostapd.start()
+        print "|_ hostapd-mana by Dominic White (singe) & Ian de Villiers online\n"
+
     #start the reactor
     reactor.run()
     print "\n"
