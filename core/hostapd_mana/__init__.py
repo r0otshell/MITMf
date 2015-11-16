@@ -5,15 +5,42 @@ import time
 
 CONF_HOSTAPD_KARMA = 'hostapd-karma.conf'
 
-class DHCPDMana(object):
+class ManaUtil(object):
+
+    def __init__(self):
+
+        mana_dir = os.path.dirname(os.path.realpath(__file__))
+        self.mana_dir = mana_dir
+        self.conf_dir = '%s/conf' % mana_dir
+        self.cert_dir = '%s/cert' % mana_dir
+        self.hostapd_path = '%s/hostapd-mana/hostapd/hostapd' % mana_dir
+
+class MacChanger(ManaUtil):
+
+    _instance = None
+    
+    def __init__(self):
+        super(ManaUtil, self).__init__()
+
+    @staticmethod
+    def get_instance():
+        
+        if MacChanger._instance is None:
+            MacChanger._instance = MacChanger()
+        return MacChanger._instance
+
+    def random(self, interface):
+
+        os.system('ifconfig %s down' % interface)
+        os.system('macchanger -r %s' % interface)
+        os.system('ifconfig %s up' % interface)
+
+class DHCPDMana(ManaUtil):
 
     _instance = None
 
     def __init__(self):
-    
-        mana_dir = os.path.dirname(os.path.realpath(__file__))
-        self.mana_dir = mana_dir
-        self.conf_dir = '%s/conf' % mana_dir
+        super(ManaUtil, self).__init__()
     
     @staticmethod
     def get_instance():
@@ -25,13 +52,13 @@ class DHCPDMana(object):
     def select_conf(self, conf):
         self.conf = '%s/%s' % (self.conf_dir, conf)
 
-    def start(self, phy):
+    def start(self, interface):
 
         # kill existing hostapd instances
         os.system('killall hostapd')
 
         # spawn hostapd background process
-        os.system('dhcpd -cf %s %s &' % (self.conf, phy))
+        os.system('dhcpd -cf %s %s &' % (self.conf, interface))
         time.sleep(2)
 
     def stop(self):
@@ -40,17 +67,12 @@ class DHCPDMana(object):
         time.sleep(2)
 
 
-class HostAPDMana(object):
+class HostAPDMana(ManaUtil):
 
     _instance = None
-    
+
     def __init__(self):
-        
-        mana_dir = os.path.dirname(os.path.realpath(__file__))
-        self.mana_dir = mana_dir
-        self.conf_dir = '%s/conf' % mana_dir
-        self.cert_dir = '%s/cert' % mana_dir
-        self.hostapd_path = '%s/hostapd-mana/hostapd/hostapd' % mana_dir
+        super(ManaUtil, self).__init__()
 
     @staticmethod
     def get_instance():
@@ -74,7 +96,7 @@ class HostAPDMana(object):
         time.sleep(2)
 
     def configure_karma(self,
-            phy,
+            interface,
             essid='Seems legit',
             bssid='00:11:22:33:44:00',
             channel=6):
@@ -87,7 +109,7 @@ class HostAPDMana(object):
         with open(conf, 'w') as fd:
 
             fd.write('\n'.join([
-                'interface=%s' % phy,
+                'interface=%s' % interface,
                 'bssid=%s' % bssid,
                 'driver=nl80211',
                 'ssid=%s' % essid,

@@ -181,7 +181,7 @@ else:
         #Start DHCPD
         from core.hostapd_mana import DHCPDMana
         dhcpd = DHCPDMana.get_instance()
-        dhcpd.start(options.phy)
+        dhcpd.start(options.interface)
         print "|_ DHCPD online"
 
         #Start HostAPD

